@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Asset Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+<style>
+:root{--bg:#f0f4f8;--card:#fff;--primary:#1a56db;--primary-dark:#1341b0;--success:#057a55;--success-bg:#def7ec;--danger:#c81e1e;--danger-bg:#fde8e8;--text:#111928;--muted:#6b7280;--border:#e5e7eb;--radius:12px;--shadow:0 1px 3px rgba(0,0,0,.1);--shadow-lg:0 10px 25px rgba(0,0,0,.12)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:80px}
+header{background:var(--primary);color:#fff;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:var(--shadow-lg)}
+header h1{font-size:18px;font-weight:700}
+header p{font-size:11px;opacity:.75;margin-top:2px}
+.header-left{display:flex;align-items:center;gap:10px}
+.header-icon{font-size:24px}
+.asset-count{background:rgba(255,255,255,.2);border-radius:20px;padding:4px 10px;font-size:12px;font-weight:600}
+nav{display:flex;background:#fff;border-bottom:1px solid var(--border);position:sticky;top:65px;z-index:99}
+nav button{flex:1;padding:12px 8px;border:none;background:none;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;display:flex;flex-direction:column;align-items:center;gap:2px}
+nav button.active{color:var(--primary);border-bottom-color:var(--primary)}
+nav button span.nav-icon{font-size:18px}
+.page{display:none;padding:16px}
+.page.active{display:block}
+.card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;margin-bottom:16px}
+.card-title{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:16px}
+.btn-scan-toggle{width:100%;padding:18px;border:2px dashed var(--primary);border-radius:var(--radius);background:#eff6ff;color:var(--primary);font-size:17px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px;transition:all .2s}
+.btn-scan-toggle:active{transform:scale(.98)}
+.btn-scan-toggle.scanning{background:#fde8e8;border-color:var(--danger);color:var(--danger)}
+.scanner-wrap{position:relative;width:100%;border-radius:var(--radius);overflow:hidden;background:#000;margin-bottom:12px;display:none}
+.scanner-wrap.active{display:block}
+#scannerVideo{width:100%;display:block;max-height:260px;object-fit:cover}
+.scanner-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.scan-frame{width:220px;height:110px;position:relative}
+.scan-frame::before,.scan-frame::after,.scan-frame>span::before,.scan-frame>span::after{content:'';position:absolute;width:22px;height:22px;border-color:#fff;border-style:solid}
+.scan-frame::before{top:0;left:0;border-width:3px 0 0 3px}
+.scan-frame::after{top:0;right:0;border-width:3px 3px 0 0}
+.scan-frame>span::before{bottom:0;left:0;border-width:0 0 3px 3px}
+.scan-frame>span::after{bottom:0;right:0;border-width:0 3px 3px 0}
+.scan-line{position:absolute;left:4px;right:4px;height:2px;background:rgba(255,60,60,.9);animation:scanLine 2s ease-in-out infinite;border-radius:2px;box-shadow:0 0 8px rgba(255,60,60,.8)}
+@keyframes scanLine{0%{top:6px}50%{top:calc(100% - 6px)}100%{top:6px}}
+.scanner-status{text-align:center;font-size:13px;color:var(--muted);margin-bottom:10px;min-height:20px;font-weight:500}
+.scanner-status.active{color:var(--primary)}
+.scanner-status.ok{color:var(--success);font-weight:700}
+.divider{display:flex;align-items:center;gap:12px;margin:12px 0;color:var(--muted);font-size:12px;font-weight:600}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.scan-input-wrap{position:relative;margin-bottom:12px}
+.scan-input-wrap input{width:100%;padding:14px 50px 14px 16px;font-size:16px;border:2px solid var(--border);border-radius:var(--radius);outline:none;transition:border-color .2s;font-weight:600;letter-spacing:1px;font-family:monospace}
+.scan-input-wrap input:focus{border-color:var(--primary)}
+.scan-input-wrap .scan-icon{position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:20px}
+.btn{display:block;width:100%;padding:14px;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;cursor:pointer;transition:all .15s;text-align:center}
+.btn:active{transform:scale(.98)}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-success{background:var(--success);color:#fff}
+.btn-outline{background:#fff;color:var(--primary);border:2px solid var(--primary)}
+.btn-sm{padding:8px 14px;font-size:13px;width:auto;display:inline-block}
+.result-card{border-radius:var(--radius);padding:20px;margin-top:16px;animation:slideUp .3s ease}
+@keyframes slideUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.result-found{background:var(--success-bg);border:2px solid #31c48d}
+.result-not-found{background:var(--danger-bg);border:2px solid #f05252}
+.result-header{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.result-icon{font-size:28px}
+.result-title{font-size:18px;font-weight:800}
+.result-subtitle{font-size:13px;color:var(--muted)}
+.asset-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.asset-field{background:#fff;border-radius:8px;padding:10px 12px}
+.asset-field label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);display:block;margin-bottom:3px}
+.asset-field span{font-size:14px;font-weight:600}
+.asset-field.full{grid-column:1/-1}
+.location-update{background:#fff;border-radius:8px;padding:14px;margin-bottom:12px}
+.location-update label{font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:8px;text-transform:uppercase}
+.location-update input,.location-update textarea{width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;outline:none;font-family:inherit}
+.location-update input:focus,.location-update textarea:focus{border-color:var(--primary)}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;outline:none;font-family:inherit;background:#fff}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--primary)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.search-bar{margin-bottom:12px}
+.search-bar input{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:var(--radius);font-size:14px;outline:none;font-family:inherit}
+.search-bar input:focus{border-color:var(--primary)}
+.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.stat-card{background:#fff;border-radius:var(--radius);padding:16px 12px;text-align:center;box-shadow:var(--shadow)}
+.stat-number{font-size:28px;font-weight:800;color:var(--primary)}
+.stat-label{font-size:11px;color:var(--muted);font-weight:600;margin-top:2px}
+.filter-row{display:flex;gap:8px;margin-bottom:12px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+.filter-chip{padding:6px 14px;border-radius:20px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--muted);transition:all .15s}
+.filter-chip.active{background:var(--primary);border-color:var(--primary);color:#fff}
+.section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.section-header h2{font-size:16px;font-weight:700}
+.export-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:0}
+.export-btn{background:#fff;border:1.5px solid var(--border);border-radius:var(--radius);padding:16px 10px;text-align:center;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:5px}
+.export-btn:active{transform:scale(.97);background:#f9fafb}
+.export-btn .export-icon{font-size:26px}
+.export-btn .export-label{font-size:13px;font-weight:700;color:var(--text)}
+.export-btn .export-desc{font-size:11px;color:var(--muted);line-height:1.3}
+.export-btn.hi{border-color:var(--primary);background:#eff6ff}
+.export-btn.hi .export-label{color:var(--primary)}
+.email-row{display:flex;gap:8px;margin-top:12px}
+.email-row input{flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;outline:none;font-family:inherit}
+.email-row input:focus{border-color:var(--primary)}
+.email-row button{padding:10px 16px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap}
+.asset-item{background:#fff;border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow);display:flex;align-items:center;gap:14px;cursor:pointer}
+.asset-item:active{opacity:.8}
+.asset-type-badge{width:44px;height:44px;border-radius:10px;background:#e8f0fe;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.asset-item-info{flex:1;min-width:0}
+.asset-item-name{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.asset-item-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.asset-item-barcode{font-size:11px;color:var(--muted);margin-top:3px;font-family:monospace}
+.asset-item-meta{text-align:right;flex-shrink:0}
+.badge{display:inline-block;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700}
+.badge-sighted{background:var(--success-bg);color:var(--success)}
+.badge-unsighted{background:#f3f4f6;color:var(--muted)}
+.drop-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:36px 20px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:16px}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--primary);background:#eff6ff}
+.drop-zone-icon{font-size:44px;margin-bottom:12px}
+.drop-zone h3{font-size:16px;font-weight:700;margin-bottom:6px}
+.drop-zone p{font-size:13px;color:var(--muted)}
+.hint{font-size:12px;color:var(--muted);margin-top:10px;padding:12px;background:#f9fafb;border-radius:8px;line-height:1.7}
+.hosting-steps{counter-reset:steps;list-style:none}
+.hosting-steps li{counter-increment:steps;display:flex;gap:12px;margin-bottom:14px;align-items:flex-start}
+.hosting-steps li::before{content:counter(steps);background:var(--primary);color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;margin-top:1px}
+.hosting-steps li p{font-size:14px;line-height:1.6}
+.hosting-steps li strong{display:block;margin-bottom:2px}
+.hosting-steps a{color:var(--primary)}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:flex-end;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:20px 20px 0 0;padding:24px 20px 40px;width:100%;max-height:90vh;overflow-y:auto;animation:slideUp .3s ease}
+.modal-title{font-size:18px;font-weight:800;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}
+.close-btn{background:#f3f4f6;border:none;border-radius:50%;width:32px;height:32px;font-size:18px;cursor:pointer}
+.empty-state{text-align:center;padding:40px 20px;color:var(--muted)}
+.empty-state .empty-icon{font-size:48px;margin-bottom:12px}
+.empty-state p{font-size:14px}
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);background:#1f2937;color:#fff;padding:12px 20px;border-radius:40px;font-size:14px;font-weight:600;opacity:0;transition:all .3s;pointer-events:none;z-index:999;white-space:nowrap}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.notice{border-radius:var(--radius);padding:14px 16px;font-size:13px;margin-bottom:16px;line-height:1.6}
+.notice-warning{background:#fffbeb;border:1.5px solid #f6ad55;color:#7d4a00}
+.delete-btn{background:#fde8e8;color:var(--danger);margin-top:10px;width:100%;padding:12px;border:none;border-radius:var(--radius);font-size:14px;font-weight:700;cursor:pointer}
+</style>
+</head>
+<body>
+<header>
+  <div class="header-left">
+    <span class="header-icon">📦</span>
+    <div><h1>Asset Tracker</h1><p>School Asset Management</p></div>
+  </div>
+  <span class="asset-count" id="assetCount">0 assets</span>
+</header>
+<nav>
+  <button class="active" onclick="showPage('scan')"><span class="nav-icon">📷</span>Scan</button>
+  <button onclick="showPage('assets')"><span class="nav-icon">📋</span>Assets</button>
+  <button onclick="showPage('add')"><span class="nav-icon">➕</span>Add New</button>
+  <button onclick="showPage('import')"><span class="nav-icon">📂</span>Import</button>
+</nav>
+
+<!-- SCAN -->
+<div class="page active" id="page-scan">
+  <div id="httpsNotice" class="notice notice-warning" style="display:none">
+    ⚠️ <strong>Camera scanning needs HTTPS.</strong> See the <strong>Import</strong> tab for free 2-minute hosting setup. Manual entry below works right now.
+  </div>
+  <div class="card">
+    <div class="card-title">Scan Barcode</div>
+    <button class="btn-scan-toggle" id="scanToggleBtn" onclick="toggleScanner()">
+      <span id="scanToggleIcon">📷</span><span id="scanToggleText">Start Camera Scanner</span>
+    </button>
+    <div class="scanner-wrap" id="scannerWrap">
+      <video id="scannerVideo" playsinline muted></video>
+      <div class="scanner-overlay"><div class="scan-frame"><span></span><div class="scan-line"></div></div></div>
+    </div>
+    <div class="scanner-status" id="scannerStatus"></div>
+    <div class="divider">OR TYPE MANUALLY</div>
+    <div class="scan-input-wrap">
+      <input type="text" id="barcodeInput" placeholder="Type barcode or asset number..." autocomplete="off" autocorrect="off" spellcheck="false" inputmode="text">
+      <span class="scan-icon">⌨️</span>
+    </div>
+    <button class="btn btn-primary" onclick="lookupBarcode()">Look Up Asset</button>
+  </div>
+  <div id="scanResult"></div>
+</div>
+
+<!-- ASSETS -->
+<div class="page" id="page-assets">
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-number" id="statTotal">0</div><div class="stat-label">Total</div></div>
+    <div class="stat-card"><div class="stat-number" id="statSighted" style="color:#057a55">0</div><div class="stat-label">Sighted</div></div>
+    <div class="stat-card"><div class="stat-number" id="statUnsighted" style="color:#c27803">0</div><div class="stat-label">Not Sighted</div></div>
+  </div>
+  <div class="card" style="padding:16px">
+    <div class="card-title" style="margin-bottom:12px">Get Data Off Device</div>
+    <div class="export-grid">
+      <div class="export-btn hi" onclick="exportCSV()">
+        <span class="export-icon">📥</span>
+        <span class="export-label">Save CSV</span>
+        <span class="export-desc">Download to Files app</span>
+      </div>
+      <div class="export-btn" onclick="shareData()">
+        <span class="export-icon">📤</span>
+        <span class="export-label">Share / AirDrop</span>
+        <span class="export-desc">AirDrop, Messages, Drive…</span>
+      </div>
+      <div class="export-btn" onclick="showEmailExport()">
+        <span class="export-icon">✉️</span>
+        <span class="export-label">Email to myself</span>
+        <span class="export-desc">Opens Mail with CSV</span>
+      </div>
+      <div class="export-btn" onclick="copyToClipboard()">
+        <span class="export-icon">📋</span>
+        <span class="export-label">Copy Data</span>
+        <span class="export-desc">Paste into spreadsheet</span>
+      </div>
+    </div>
+    <div id="emailExportRow" style="display:none">
+      <div class="email-row">
+        <input type="email" id="exportEmail" placeholder="your@email.com">
+        <button onclick="sendEmailWithCSV()">Send</button>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin-top:6px">Opens Mail app — CSV data is in the email body. Copy &amp; save as .csv or paste into Excel.</p>
+    </div>
+  </div>
+  <div class="search-bar">
+    <input type="text" id="searchInput" placeholder="🔍  Search by asset no., barcode, make, location..." oninput="renderAssetList()">
+  </div>
+  <div class="filter-row">
+    <button class="filter-chip active" onclick="setFilter('All')">All</button>
+    <button class="filter-chip" onclick="setFilter('Laptop')">Laptop</button>
+    <button class="filter-chip" onclick="setFilter('Desktop')">Desktop</button>
+    <button class="filter-chip" onclick="setFilter('iPad')">iPad</button>
+    <button class="filter-chip" onclick="setFilter('Chromebook')">Chromebook</button>
+    <button class="filter-chip" onclick="setFilter('Printer')">Printer</button>
+    <button class="filter-chip" onclick="setFilter('MLD')">MLD</button>
+    <button class="filter-chip" onclick="setFilter('Other')">Other</button>
+  </div>
+  <div class="section-header"><h2 id="assetListCount">Assets</h2></div>
+  <div id="assetList"></div>
+</div>
+
+<!-- ADD -->
+<div class="page" id="page-add">
+  <div class="card">
+    <div class="card-title" id="addCardTitle">Add New Asset</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Asset Number</label>
+        <input type="text" id="newAssetNumber" placeholder="e.g. 10045">
+      </div>
+      <div class="form-group">
+        <label>Barcode *</label>
+        <input type="text" id="newBarcode" placeholder="e.g. LAP00123" autocomplete="off" autocorrect="off">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Type *</label>
+        <select id="newType">
+          <option value="">Select...</option>
+          <option>Laptop</option><option>Desktop</option><option>Chromebook</option>
+          <option>iPad</option><option>Printer</option><option>MLD</option><option>Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Make</label>
+        <select id="newMake">
+          <option value="">Select...</option>
+          <option>HP</option><option>Dell</option><option>Acer</option><option>Lenovo</option>
+          <option>Apple</option><option>Commbox</option><option>Canon</option><option>Samsung</option><option>Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Model</label><input type="text" id="newModel" placeholder="e.g. Apple iPad Gen 6"></div>
+    <div class="form-group"><label>Serial Number</label><input type="text" id="newSerial" placeholder="Optional"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Location</label><input type="text" id="newLocation" placeholder="e.g. MR1012"></div>
+      <div class="form-group"><label>Date Sighted</label><input type="date" id="newDate"></div>
+    </div>
+    <div class="form-group"><label>Comment</label><textarea id="newComment" rows="2" placeholder="Optional notes..."></textarea></div>
+    <button class="btn btn-primary" onclick="saveNewAsset()">Save Asset</button>
+  </div>
+</div>
+
+<!-- IMPORT -->
+<div class="page" id="page-import">
+  <div class="card">
+    <div class="card-title">Import Asset Data</div>
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <div class="drop-zone-icon">📊</div>
+      <h3>Upload CSV or Excel File</h3>
+      <p>Tap to choose file • Supports .csv, .xlsx, .xls</p>
+    </div>
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFile(event)">
+    <div class="hint">
+      <strong>Recognised column names:</strong><br>
+      Asset Number (also: AssetNo, Asset No, AssetNumber)<br>
+      Barcode (also: Asset ID, Tag Number, ID)<br>
+      Type, Make, Model, Serial, Location, DateSighted, Comment<br><br>
+      Re-importing adds new assets and updates existing ones without overwriting sighting data already collected.
+    </div>
+  </div>
+  <div class="card" id="importPreview" style="display:none">
+    <div class="card-title">Last Import Result</div>
+    <div id="importPreviewContent"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">📡 Enable Camera Scanning (free HTTPS hosting)</div>
+    <p style="font-size:14px;color:var(--muted);margin-bottom:16px;line-height:1.6">iPhone/iPad cameras require HTTPS. Quickest free option — <strong>Netlify Drop</strong>, no account needed:</p>
+    <ol class="hosting-steps">
+      <li><p><strong>Go to app.netlify.com/drop</strong><br>Open <a href="https://app.netlify.com/drop" target="_blank">app.netlify.com/drop</a> on your computer</p></li>
+      <li><p><strong>Drag this HTML file onto the page</strong><br>Deploys instantly with a permanent HTTPS URL</p></li>
+      <li><p><strong>Open the URL on your iPhone/iPad</strong><br>Tap Share → Add to Home Screen for app-like access</p></li>
+      <li><p><strong>Done!</strong> Camera scanning will work. Use the export options to get data back to your computer.</p></li>
+    </ol>
+    <div class="hint">💡 Each device stores data locally. Use <strong>Share / AirDrop</strong> or <strong>Email to myself</strong> on the Assets page to transfer data back to your computer.</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Data Management</div>
+    <p style="font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:14px">All data is stored in this browser's local storage. Export regularly as a backup.</p>
+    <button class="btn btn-outline" onclick="exportCSV()" style="margin-bottom:10px">📥 Export CSV Now</button>
+    <button class="delete-btn" onclick="clearData()">⚠️ Clear All Data From This Device</button>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="assetModal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-title"><span id="modalTitle">Asset Details</span><button class="close-btn" onclick="closeModal()">✕</button></div>
+    <div id="modalContent"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const STORAGE_KEY='asset_tracker_v3';
+let assets=[],currentFilter='All',editingBarcode=null;
+
+function loadData(){
+  try{const s=localStorage.getItem(STORAGE_KEY);if(s)assets=JSON.parse(s);}catch(e){assets=[];}
+  if(!assets.length){try{const o=localStorage.getItem('asset_tracker_v2');if(o){assets=JSON.parse(o);saveData();}}catch(e){}}
+  updateUI();
+}
+function saveData(){localStorage.setItem(STORAGE_KEY,JSON.stringify(assets));updateUI();}
+function updateUI(){
+  document.getElementById('assetCount').textContent=assets.length+' assets';
+  document.getElementById('statTotal').textContent=assets.length;
+  const s=assets.filter(a=>a.dateSighted).length;
+  document.getElementById('statSighted').textContent=s;
+  document.getElementById('statUnsighted').textContent=assets.length-s;
+}
+
+window.addEventListener('load',()=>{
+  if(location.protocol!=='https:'&&location.hostname!=='localhost'&&location.hostname!=='')
+    document.getElementById('httpsNotice').style.display='block';
+});
+
+function showPage(p){
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+p).classList.add('active');
+  document.querySelectorAll('nav button')[['scan','assets','add','import'].indexOf(p)].classList.add('active');
+  if(p==='assets')renderAssetList();
+  if(p==='add'&&!editingBarcode){document.getElementById('newDate').value=today();document.getElementById('addCardTitle').textContent='Add New Asset';}
+  if(p!=='scan')stopScanner();
+}
+
+let codeReader=null,scannerRunning=false,scannerStream=null;
+async function toggleScanner(){scannerRunning?stopScanner():startScanner();}
+async function startScanner(){
+  if(location.protocol!=='https:'&&location.hostname!=='localhost'){showToast('⚠️ Camera needs HTTPS — see Import tab');return;}
+  if(typeof ZXing==='undefined'){showToast('⚠️ Scanner not loaded. Check internet.');return;}
+  setStatus('Requesting camera...','active');
+  try{
+    scannerStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280}}});
+    const v=document.getElementById('scannerVideo');v.srcObject=scannerStream;await v.play();
+    document.getElementById('scannerWrap').classList.add('active');
+    document.getElementById('scanToggleBtn').classList.add('scanning');
+    document.getElementById('scanToggleIcon').textContent='⏹';
+    document.getElementById('scanToggleText').textContent='Stop Scanner';
+    scannerRunning=true;setStatus('Point at barcode...','active');
+    codeReader=new ZXing.BrowserMultiFormatReader();
+    codeReader.decodeFromStream(scannerStream,v,(result,err)=>{
+      if(result){
+        const t=result.getText();setStatus('✅ Scanned: '+t,'ok');
+        if(navigator.vibrate)navigator.vibrate(100);
+        document.getElementById('barcodeInput').value=t;
+        stopScanner();lookupBarcode();
+      }
+    });
+  }catch(err){
+    setStatus('','');stopScanner();
+    if(err.name==='NotAllowedError')showToast('📷 Camera permission denied — check Safari settings');
+    else showToast('📷 Camera error: '+err.message);
+  }
+}
+function stopScanner(){
+  if(codeReader){try{codeReader.reset();}catch(e){}codeReader=null;}
+  if(scannerStream){scannerStream.getTracks().forEach(t=>t.stop());scannerStream=null;}
+  const v=document.getElementById('scannerVideo');if(v)v.srcObject=null;
+  document.getElementById('scannerWrap').classList.remove('active');
+  document.getElementById('scanToggleBtn').classList.remove('scanning');
+  document.getElementById('scanToggleIcon').textContent='📷';
+  document.getElementById('scanToggleText').textContent='Start Camera Scanner';
+  scannerRunning=false;
+}
+function setStatus(msg,cls){const el=document.getElementById('scannerStatus');el.textContent=msg;el.className='scanner-status'+(cls?' '+cls:'');}
+
+document.getElementById('barcodeInput').addEventListener('keypress',e=>{if(e.key==='Enter')lookupBarcode();});
+
+function lookupBarcode(){
+  const barcode=document.getElementById('barcodeInput').value.trim();
+  if(!barcode)return;
+  const asset=assets.find(a=>a.barcode===barcode)||assets.find(a=>a.assetNumber===barcode);
+  const resultEl=document.getElementById('scanResult');
+  if(asset){
+    resultEl.innerHTML=`
+      <div class="result-card result-found">
+        <div class="result-header">
+          <span class="result-icon">${typeIcon(asset.type)}</span>
+          <div><div class="result-title">${esc(asset.type)||'Asset'} Found</div><div class="result-subtitle">Barcode: ${esc(asset.barcode)}</div></div>
+        </div>
+        <div class="asset-grid">
+          <div class="asset-field"><label>Asset Number</label><span>${esc(asset.assetNumber)||'—'}</span></div>
+          <div class="asset-field"><label>Barcode</label><span>${esc(asset.barcode)}</span></div>
+          <div class="asset-field"><label>Type</label><span>${esc(asset.type)||'—'}</span></div>
+          <div class="asset-field"><label>Make</label><span>${esc(asset.make)||'—'}</span></div>
+          <div class="asset-field full"><label>Model</label><span>${esc(asset.model)||'—'}</span></div>
+          <div class="asset-field"><label>Serial</label><span>${esc(asset.serial)||'—'}</span></div>
+          <div class="asset-field"><label>Last Sighted</label><span>${esc(asset.dateSighted)||'Never'}</span></div>
+          <div class="asset-field full"><label>Last Location</label><span>${esc(asset.location)||'—'}</span></div>
+        </div>
+        <div class="location-update">
+          <label>📍 Update Location</label>
+          <input type="text" id="updateLocation" value="${esc(asset.location||'')}" placeholder="Room code e.g. MR1012">
+        </div>
+        <div class="location-update">
+          <label>💬 Comment (optional)</label>
+          <textarea id="updateComment" rows="2" placeholder="Any notes...">${esc(asset.comment||'')}</textarea>
+        </div>
+        <button class="btn btn-success" onclick="confirmSighting(${JSON.stringify(asset.barcode)})">✅ Confirm Sighted — ${today()}</button>
+      </div>`;
+  }else{
+    resultEl.innerHTML=`
+      <div class="result-card result-not-found">
+        <div class="result-header">
+          <span class="result-icon">❓</span>
+          <div><div class="result-title">Barcode Not Found</div><div class="result-subtitle">${esc(barcode)}</div></div>
+        </div>
+        <p style="font-size:14px;color:var(--muted);margin-bottom:16px">This barcode isn't in the system. Would you like to add it?</p>
+        <button class="btn btn-primary" onclick="prefillAdd(${JSON.stringify(barcode)})">Add New Asset with This Barcode</button>
+      </div>`;
+  }
+  setTimeout(()=>resultEl.scrollIntoView({behavior:'smooth',block:'nearest'}),100);
+}
+
+function confirmSighting(barcode){
+  const a=assets.find(x=>x.barcode===barcode);if(!a)return;
+  a.dateSighted=today();
+  const loc=document.getElementById('updateLocation').value.trim();
+  const cmt=document.getElementById('updateComment').value.trim();
+  if(loc)a.location=loc;if(cmt)a.comment=cmt;
+  saveData();showToast('✅ Asset sighted and updated!');
+  document.getElementById('barcodeInput').value='';
+  document.getElementById('scanResult').innerHTML='';
+  setStatus('','');
+  setTimeout(()=>startScanner(),400);
+}
+
+function prefillAdd(barcode){showPage('add');document.getElementById('newBarcode').value=barcode;document.getElementById('newDate').value=today();}
+
+function setFilter(f){
+  currentFilter=f;
+  document.querySelectorAll('.filter-chip').forEach(c=>c.classList.toggle('active',c.textContent===f));
+  renderAssetList();
+}
+
+function renderAssetList(){
+  const search=(document.getElementById('searchInput').value||'').toLowerCase();
+  let filtered=assets.filter(a=>{
+    const mf=currentFilter==='All'||(a.type||'').toLowerCase()===currentFilter.toLowerCase();
+    const ms=!search||['barcode','assetNumber','make','model','location','type','serial'].some(k=>(a[k]||'').toLowerCase().includes(search));
+    return mf&&ms;
+  });
+  document.getElementById('assetListCount').textContent='Assets ('+filtered.length+')';
+  const el=document.getElementById('assetList');
+  if(!filtered.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">🔍</div><p>No assets found</p></div>';return;}
+  el.innerHTML=filtered.map(a=>`
+    <div class="asset-item" onclick="showAssetDetail(${JSON.stringify(a.barcode)})">
+      <div class="asset-type-badge">${typeIcon(a.type)}</div>
+      <div class="asset-item-info">
+        <div class="asset-item-name">${esc(a.make||'')} ${esc(a.model||a.type||'Asset')}</div>
+        <div class="asset-item-sub">${a.assetNumber?'#'+esc(a.assetNumber)+' · ':''}${esc(a.location||'No location')}</div>
+        <div class="asset-item-barcode">${esc(a.barcode)}</div>
+      </div>
+      <div class="asset-item-meta"><span class="badge ${a.dateSighted?'badge-sighted':'badge-unsighted'}">${a.dateSighted||'Not sighted'}</span></div>
+    </div>`).join('');
+}
+
+function showAssetDetail(barcode){
+  const a=assets.find(x=>x.barcode===barcode);if(!a)return;
+  document.getElementById('modalTitle').textContent=(a.type||'Asset')+' — '+(a.assetNumber||a.barcode);
+  document.getElementById('modalContent').innerHTML=`
+    <div class="asset-grid">
+      <div class="asset-field"><label>Asset Number</label><span>${esc(a.assetNumber)||'—'}</span></div>
+      <div class="asset-field"><label>Barcode</label><span>${esc(a.barcode)}</span></div>
+      <div class="asset-field"><label>Type</label><span>${esc(a.type)||'—'}</span></div>
+      <div class="asset-field"><label>Make</label><span>${esc(a.make)||'—'}</span></div>
+      <div class="asset-field full"><label>Model</label><span>${esc(a.model)||'—'}</span></div>
+      <div class="asset-field"><label>Serial</label><span>${esc(a.serial)||'—'}</span></div>
+      <div class="asset-field"><label>Location</label><span>${esc(a.location)||'—'}</span></div>
+      <div class="asset-field"><label>Date Sighted</label><span>${esc(a.dateSighted)||'Never'}</span></div>
+      <div class="asset-field full"><label>Comment</label><span>${esc(a.comment)||'—'}</span></div>
+    </div>
+    <button class="btn btn-primary" style="margin-bottom:10px" onclick="closeModal();scanSpecific(${JSON.stringify(barcode)})">📷 Scan / Update Now</button>
+    <button class="btn btn-outline" style="margin-bottom:10px" onclick="editAsset(${JSON.stringify(barcode)})">✏️ Edit Details</button>
+    <button class="delete-btn" onclick="deleteAsset(${JSON.stringify(barcode)})">🗑 Delete Asset</button>`;
+  document.getElementById('assetModal').classList.add('open');
+}
+
+function scanSpecific(b){showPage('scan');document.getElementById('barcodeInput').value=b;lookupBarcode();}
+
+function editAsset(barcode){
+  const a=assets.find(x=>x.barcode===barcode);if(!a)return;
+  closeModal();editingBarcode=barcode;showPage('add');
+  document.getElementById('addCardTitle').textContent='Edit Asset';
+  document.getElementById('newAssetNumber').value=a.assetNumber||'';
+  document.getElementById('newBarcode').value=a.barcode;
+  document.getElementById('newType').value=a.type||'';
+  document.getElementById('newMake').value=a.make||'';
+  document.getElementById('newModel').value=a.model||'';
+  document.getElementById('newSerial').value=a.serial||'';
+  document.getElementById('newLocation').value=a.location||'';
+  document.getElementById('newDate').value=a.dateSighted||'';
+  document.getElementById('newComment').value=a.comment||'';
+}
+
+function deleteAsset(barcode){
+  if(!confirm('Delete this asset?'))return;
+  assets=assets.filter(a=>a.barcode!==barcode);
+  saveData();closeModal();renderAssetList();showToast('🗑 Asset deleted');
+}
+
+function closeModal(){document.getElementById('assetModal').classList.remove('open');}
+
+function saveNewAsset(){
+  const barcode=document.getElementById('newBarcode').value.trim();
+  const type=document.getElementById('newType').value;
+  if(!barcode){showToast('⚠️ Barcode is required');return;}
+  if(!type){showToast('⚠️ Type is required');return;}
+  if(!editingBarcode&&assets.find(a=>a.barcode===barcode)){showToast('⚠️ Barcode already exists!');return;}
+  const data={
+    assetNumber:document.getElementById('newAssetNumber').value.trim(),
+    barcode,type,
+    make:document.getElementById('newMake').value,
+    model:document.getElementById('newModel').value.trim(),
+    serial:document.getElementById('newSerial').value.trim(),
+    location:document.getElementById('newLocation').value.trim(),
+    dateSighted:document.getElementById('newDate').value,
+    comment:document.getElementById('newComment').value.trim(),
+  };
+  if(editingBarcode){const i=assets.findIndex(a=>a.barcode===editingBarcode);if(i>=0)assets[i]=data;}
+  else assets.push(data);
+  saveData();showToast(editingBarcode?'✅ Asset updated!':'✅ Asset added!');
+  ['newAssetNumber','newBarcode','newModel','newSerial','newLocation','newComment'].forEach(id=>document.getElementById(id).value='');
+  ['newType','newMake'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('newDate').value=today();
+  document.getElementById('addCardTitle').textContent='Add New Asset';
+  editingBarcode=null;
+}
+
+const dropZone=document.getElementById('dropZone');
+dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag-over');});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('drag-over');if(e.dataTransfer.files[0])processFile(e.dataTransfer.files[0]);});
+function handleFile(e){if(e.target.files[0])processFile(e.target.files[0]);e.target.value='';}
+
+function processFile(file){
+  const ext=file.name.split('.').pop().toLowerCase();
+  if(ext==='csv'){const r=new FileReader();r.onload=e=>parseCSV(e.target.result);r.readAsText(file);}
+  else if(ext==='xlsx'||ext==='xls'){const r=new FileReader();r.onload=e=>{const wb=XLSX.read(e.target.result,{type:'binary'});parseCSV(XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]));};r.readAsBinaryString(file);}
+  else showToast('⚠️ Please use a CSV or Excel file');
+}
+
+function parseCSV(text){
+  const lines=text.trim().split('\n');if(lines.length<2){showToast('⚠️ File appears empty');return;}
+  const headers=lines[0].split(',').map(h=>h.trim().replace(/"/g,'').toLowerCase());
+  const col=names=>{for(const n of names){const i=headers.findIndex(h=>h===n||h.includes(n));if(i>=0)return i;}return -1;};
+  const m={
+    assetNumber:col(['asset number','assetnumber','asset no','assetno','asset_number']),
+    barcode:col(['barcode','asset id','asset_id','id','assetid','tag number','tagnumber','tag']),
+    type:col(['type','asset type']),make:col(['make','brand','manufacturer']),
+    model:col(['model','description']),serial:col(['serial','serial number','serialnumber','sn']),
+    location:col(['location','room','room code']),
+    dateSighted:col(['datesighted','date sighted','sighted','last seen','date']),
+    comment:col(['comment','comments','notes','note']),
+  };
+  if(m.barcode===-1&&m.assetNumber===-1){showToast('⚠️ No barcode or asset number column found');return;}
+  let added=0,updated=0;
+  for(let i=1;i<lines.length;i++){
+    const vals=parseCSVLine(lines[i]);if(!vals.length)continue;
+    const barcode=getVal(vals,m.barcode)||getVal(vals,m.assetNumber);
+    if(!barcode)continue;
+    const rec={assetNumber:getVal(vals,m.assetNumber),barcode:getVal(vals,m.barcode)||barcode,
+      type:getVal(vals,m.type),make:getVal(vals,m.make),model:getVal(vals,m.model),
+      serial:getVal(vals,m.serial),location:getVal(vals,m.location),
+      dateSighted:getVal(vals,m.dateSighted),comment:getVal(vals,m.comment)};
+    const idx=assets.findIndex(a=>a.barcode===rec.barcode);
+    if(idx>=0){const ex=assets[idx];assets[idx]={...rec,dateSighted:ex.dateSighted||rec.dateSighted,location:ex.location||rec.location,comment:ex.comment||rec.comment};updated++;}
+    else{assets.push(rec);added++;}
+  }
+  saveData();
+  document.getElementById('importPreview').style.display='block';
+  document.getElementById('importPreviewContent').innerHTML=`<p style="font-size:15px;line-height:2.2">✅ <strong>${added}</strong> new assets added<br>🔄 <strong>${updated}</strong> existing updated<br>📦 <strong>${assets.length}</strong> total in system</p>`;
+  showToast('✅ '+added+' added, '+updated+' updated');
+}
+
+function parseCSVLine(line){
+  const result=[];let cur='',inQ=false;
+  for(const c of line){if(c==='"'){inQ=!inQ;}else if(c===','&&!inQ){result.push(cur);cur='';}else{cur+=c;}}
+  result.push(cur);return result;
+}
+function getVal(arr,idx){if(idx<0||idx>=arr.length)return '';return arr[idx].trim().replace(/^"|"$/g,'');}
+
+function buildCSV(){
+  const hdr=['AssetNumber','Barcode','Type','Make','Model','Serial','Location','DateSighted','Comment'];
+  const rows=assets.map(a=>[a.assetNumber,a.barcode,a.type,a.make,a.model,a.serial,a.location,a.dateSighted,a.comment].map(v=>`"${(v||'').replace(/"/g,'""')}"`).join(','));
+  return[hdr.join(','),...rows].join('\n');
+}
+
+function exportCSV(){
+  const blob=new Blob([buildCSV()],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const el=document.createElement('a');el.href=url;el.download='assets_'+today()+'.csv';el.click();
+  URL.revokeObjectURL(url);showToast('📥 CSV saved!');
+}
+
+function showEmailExport(){
+  const row=document.getElementById('emailExportRow');
+  row.style.display=row.style.display==='none'?'block':'none';
+  if(row.style.display==='block')document.getElementById('exportEmail').focus();
+}
+
+function sendEmailWithCSV(){
+  const email=document.getElementById('exportEmail').value.trim();
+  const csv=buildCSV();
+  const sighted=assets.filter(a=>a.dateSighted).length;
+  const subject=encodeURIComponent('Asset Tracker Export — '+today());
+  const body=encodeURIComponent('Asset Tracker Export\nDate: '+today()+'\nTotal: '+assets.length+'\nSighted: '+sighted+'\nNot sighted: '+(assets.length-sighted)+'\n\nPaste the data below into a .csv file or directly into Excel / Google Sheets:\n\n'+csv);
+  window.location.href='mailto:'+email+'?subject='+subject+'&body='+body;
+  showToast('✉️ Opening Mail app...');
+}
+
+async function shareData(){
+  const csv=buildCSV();
+  const filename='assets_'+today()+'.csv';
+  if(navigator.canShare){
+    try{
+      const file=new File([csv],filename,{type:'text/csv'});
+      if(navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'Asset Tracker Export'});return;}
+    }catch(e){if(e.name==='AbortError')return;}
+  }
+  if(navigator.share){
+    try{await navigator.share({title:'Asset Tracker Export',text:csv});return;}
+    catch(e){if(e.name==='AbortError')return;}
+  }
+  exportCSV();
+}
+
+async function copyToClipboard(){
+  const csv=buildCSV();
+  try{await navigator.clipboard.writeText(csv);}
+  catch(e){const ta=document.createElement('textarea');ta.value=csv;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);}
+  showToast('📋 Copied! Paste into Excel or Google Sheets');
+}
+
+function today(){return new Date().toISOString().split('T')[0];}
+function typeIcon(t){return{laptop:'💻',desktop:'🖥️',chromebook:'💻',ipad:'📱',printer:'🖨️',mld:'📺',other:'📦'}[(t||'').toLowerCase()]||'📦';}
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);}
+function clearData(){if(!confirm('Delete ALL asset data from this device?'))return;assets=[];saveData();renderAssetList();showToast('🗑 All data cleared');}
+
+document.getElementById('newDate').value=today();
+loadData();
+</script>
+</body>
+</html>
